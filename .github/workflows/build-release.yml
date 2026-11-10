@@ -1,6 +1,8 @@
 name: Build & Release Scopegram
 
 on:
+  schedule:
+    - cron: '0 3 * * *'
   push:
     branches:
       - main
@@ -49,19 +51,30 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Patch plisttool for fake certificate expiration
+      - name: Patch rules_apple (plisttool and actool)
         run: |
           python3 -c "
-          path = 'build-system/bazel-rules/rules_apple/tools/plisttool/plisttool.py'
-          try:
-              with open(path, 'r') as f:
+          import os
+          # 1. Patch plisttool for fake certificate expiration
+          path_plist = 'build-system/bazel-rules/rules_apple/tools/plisttool/plisttool.py'
+          if os.path.exists(path_plist):
+              with open(path_plist, 'r') as f:
                   content = f.read()
               content = content.replace('raise PlistToolError(ENTITLEMENTS_PROFILE_HAS_EXPIRED', '# raise PlistToolError(ENTITLEMENTS_PROFILE_HAS_EXPIRED')
-              with open(path, 'w') as f:
+              with open(path_plist, 'w') as f:
                   f.write(content)
               print('Successfully patched plisttool.py')
-          except Exception as e:
-              print('Plisttool patch error:', e)
+
+          # 2. Patch actool for Xcode version check on .icon bundles
+          path_actool = 'build-system/bazel-rules/rules_apple/apple/internal/resource_actions/actool.bzl'
+          if os.path.exists(path_actool):
+              with open(path_actool, 'r') as f:
+                  content = f.read()
+              target = 'is_xcode_26_or_later = xcode_config.xcode_version() >= apple_common.dotted_version(\"26.0\")'
+              content = content.replace(target, 'is_xcode_26_or_later = True')
+              with open(path_actool, 'w') as f:
+                  f.write(content)
+              print('Successfully patched actool.bzl')
           "
 
       - name: Determine Build Metadata
