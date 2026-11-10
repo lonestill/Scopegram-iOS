@@ -422,28 +422,17 @@ public class GlassBackgroundView: UIView {
                 transition.setCornerRadius(layer: self.view.layer, cornerRadius: cornerRadius)
             case let .customRoundedRect(cornerRadii):
                 transition.setCornerRadius(layer: self.view.layer, cornerRadius: 0.0)
-                if #available(iOS 26.0, *) {
-                    transition.animateView {
-                        self.view.cornerConfiguration = .corners(
-                            topLeftRadius: .fixed(cornerRadii.topLeft),
-                            topRightRadius: .fixed(cornerRadii.topRight),
-                            bottomLeftRadius: .fixed(cornerRadii.bottomLeft),
-                            bottomRightRadius: .fixed(cornerRadii.bottomRight)
-                        )
-                    }
+                let maskLayer: CAShapeLayer
+                if let current = self.maskLayer {
+                    maskLayer = current
                 } else {
-                    let maskLayer: CAShapeLayer
-                    if let current = self.maskLayer {
-                        maskLayer = current
-                    } else {
-                        maskLayer = CAShapeLayer()
-                        maskLayer.fillColor = UIColor.black.cgColor
-                        self.maskLayer = maskLayer
-                        self.view.layer.mask = maskLayer
-                    }
-                    transition.setFrame(layer: maskLayer, frame: CGRect(origin: CGPoint(), size: size))
-                    transition.setShapeLayerPath(layer: maskLayer, path: GlassBackgroundView.generateRoundedRectPath(size: size, cornerRadii: cornerRadii))
+                    maskLayer = CAShapeLayer()
+                    maskLayer.fillColor = UIColor.black.cgColor
+                    self.maskLayer = maskLayer
+                    self.view.layer.mask = maskLayer
                 }
+                transition.setFrame(layer: maskLayer, frame: CGRect(origin: CGPoint(), size: size))
+                transition.setShapeLayerPath(layer: maskLayer, path: GlassBackgroundView.generateRoundedRectPath(size: size, cornerRadii: cornerRadii))
             }
         }
     }
