@@ -1,0 +1,23 @@
+{
+  "images": [
+    {
+      "filename": "ScopegramBadgeSupporterLarge.png",
+      "idiom": "universal",
+      "scale": "1x"
+    },
+    {
+      "filename": "ScopegramBadgeSupporterLarge@2x.png",
+      "idiom": "universal",
+      "scale": "2x"
+    },
+    {
+      "filename": "ScopegramBadgeSupporterLarge@3x.png",
+      "idiom": "universal",
+      "scale": "3x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

@@ -1,0 +1,130 @@
+name: Build & Release Scopegram
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Build Number (например 10001)'
+        required: false
+        default: '10001'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Scopegram IPA
+    runs-on: macos-14
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Free Disk Space
+        run: |
+          echo "Disk space before cleanup:"
+          df -h /
+          sudo rm -rf /Applications/Xcode_14*.app /Applications/Xcode_15.0*.app /Applications/Xcode_15.1*.app /Applications/Xcode_15.2*.app /Applications/Xcode_15.3*.app 2>/dev/null || true
+          sudo rm -rf /Users/runner/Library/Android 2>/dev/null || true
+          echo "Disk space after cleanup:"
+          df -h /
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Patch plisttool for fake certificate expiration
+        run: |
+          python3 -c "
+          path = 'build-system/bazel-rules/rules_apple/tools/plisttool/plisttool.py'
+          try:
+              with open(path, 'r') as f:
+                  content = f.read()
+              content = content.replace('raise PlistToolError(ENTITLEMENTS_PROFILE_HAS_EXPIRED', '# raise PlistToolError(ENTITLEMENTS_PROFILE_HAS_EXPIRED')
+              with open(path, 'w') as f:
+                  f.write(content)
+              print('Successfully patched plisttool.py')
+          except Exception as e:
+              print('Plisttool patch error:', e)
+          "
+
+      - name: Determine Build Metadata
+        id: meta
+        run: |
+          BUILD_NUM="${{ github.event.inputs.build_number }}"
+          if [ -z "$BUILD_NUM" ]; then
+            BUILD_NUM="${{ github.run_number }}"
+          fi
+          echo "BUILD_NUM=$BUILD_NUM" >> $GITHUB_OUTPUT
+          
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          else
+            TAG_NAME="v1.0.${BUILD_NUM}"
+          fi
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Build IPA via Make.py
+        run: |
+          python3 build-system/Make/Make.py --overrideXcodeVersion build \
+            --configurationPath build-system/appstore-configuration.json \
+            --codesigningInformationPath build-system/fake-codesigning \
+            --buildNumber=${{ steps.meta.outputs.BUILD_NUM }} \
+            --configuration=release_arm64 \
+            --outputBuildArtifactsPath outputs/Telegram-iOS
+
+      - name: Package Artifacts
+        run: |
+          mkdir -p artifacts
+          cp outputs/Telegram-iOS/Telegram.ipa artifacts/Scopegram.ipa
+          
+          # Build Scopegram-Sideload.ipa (stripped PlugIns for free developer accounts)
+          mkdir -p /tmp/sideload_unpack
+          unzip -q outputs/Telegram-iOS/Telegram.ipa -d /tmp/sideload_unpack
+          rm -rf /tmp/sideload_unpack/Payload/Telegram.app/PlugIns/*
+          (cd /tmp/sideload_unpack && zip -qr9 "$GITHUB_WORKSPACE/artifacts/Scopegram-Sideload.ipa" Payload)
+          
+          if [ -f outputs/Telegram-iOS/Telegram.DSYMs.zip ]; then
+            cp outputs/Telegram-iOS/Telegram.DSYMs.zip artifacts/Scopegram.DSYMs.zip
+          fi
+          
+          ls -lh artifacts/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.TAG_NAME }}
+          name: Scopegram ${{ steps.meta.outputs.TAG_NAME }}
+          body: |
+            ### Scopegram ${{ steps.meta.outputs.TAG_NAME }}
+            
+            **Сборка:** `${{ steps.meta.outputs.BUILD_NUM }}`
+            
+            #### Файлы релиза:
+            * **Scopegram.ipa** — стандартный пакет со всеми App Extensions (для платных Apple ID, TrollStore, LiveContainer).
+            * **Scopegram-Sideload.ipa** — облегчённый пакет без расширений (для бесплатных Apple ID через Sideloadly / AltStore).
+            * **Scopegram.DSYMs.zip** — архивированные отладочные символы dSYM.
+          files: |
+            artifacts/Scopegram.ipa
+            artifacts/Scopegram-Sideload.ipa
+            artifacts/Scopegram.DSYMs.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
