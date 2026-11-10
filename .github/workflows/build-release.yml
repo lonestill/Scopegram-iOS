@@ -55,12 +55,12 @@ jobs:
         run: |
           python3 -c "
           import os
-          # 1. Patch plisttool for fake certificate expiration
+          # 1. Patch plisttool for fake certificate expiration (safe one-line disable)
           path_plist = 'build-system/bazel-rules/rules_apple/tools/plisttool/plisttool.py'
           if os.path.exists(path_plist):
               with open(path_plist, 'r') as f:
                   content = f.read()
-              content = content.replace('raise PlistToolError(ENTITLEMENTS_PROFILE_HAS_EXPIRED', '# raise PlistToolError(ENTITLEMENTS_PROFILE_HAS_EXPIRED')
+              content = content.replace(\"expire = self._profile_metadata.get('ExpirationDate')\", \"expire = None\")
               with open(path_plist, 'w') as f:
                   f.write(content)
               print('Successfully patched plisttool.py')
